@@ -63,9 +63,16 @@ if (values.json) {
 
 try {
   // A clean exit: the Homebrew service restarts only after a crash, so a stop stays stopped.
+  // Under `brew services`, launchd would keep the job loaded and block the next
+  // `brew services run`, so unload it as well; that also ends this process.
   const onStop = () => {
     console.log('Stopped from the page.');
-    process.exit(0);
+    const label = process.env.XPC_SERVICE_NAME;
+    if (process.platform === 'darwin' && label?.startsWith('sh.brew.gattini-watch')) {
+      execFile('launchctl', ['bootout', `gui/${process.getuid()}/${label}`], () => process.exit(0));
+    } else {
+      process.exit(0);
+    }
   };
   await startServer({ fleet, port, hours, onStop });
 } catch (error) {

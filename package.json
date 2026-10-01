@@ -1,6 +1,6 @@
 {
   "name": "gattini-watch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live local dashboard of Claude Code and Codex agents, including cross-tool workers",
   "type": "module",
   "license": "MIT",
