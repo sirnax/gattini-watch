@@ -42,8 +42,9 @@ Update with `brew upgrade gattini-watch`.
 | `--version` | | Print the version |
 
 If the port is taken, Gattini Watch stops and tells you, rather than quietly moving to
-another one. Pick a free port with `--port` or `GATTINI_WATCH_PORT`. For the background
-service, set the variable before `brew services start`.
+another one. Pick a free port with `--port` or `GATTINI_WATCH_PORT`. The background
+service always uses 4777. If that port is taken on your machine, run
+`gattini-watch --port <n>` yourself instead of using the service.
 
 ### Without the port number
 
