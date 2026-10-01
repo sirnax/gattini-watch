@@ -14,24 +14,42 @@ Gattini.
 brew install sirnax/gattini/gattini-watch
 ```
 
-Keep it running, including after you log in:
+## Start and stop
+
+Nothing starts by itself. Choose one of these:
 
 ```sh
-brew services start gattini-watch
-brew services stop gattini-watch      # to stop it
-```
-
-Or run it once in a terminal, and stop it with Ctrl+C:
-
-```sh
-gattini-watch --open
+brew services run gattini-watch       # start in the background until you stop it or log out
+gattini-watch --open                  # or run it in a terminal; Ctrl+C stops it
 ```
 
 Then open **http://gattini-watch.localhost:4777**. Any name ending in `.localhost` reaches
 your own machine on macOS, Linux and Windows, with no setup. `http://127.0.0.1:4777` also
 works.
 
-Update with `brew upgrade gattini-watch`.
+To stop it, use any of these:
+
+- the **■ Stop** button on the page
+- `brew services stop gattini-watch`
+- Ctrl+C in the terminal
+
+Once stopped, it stays stopped. The service restarts it only after a crash.
+
+To have it start every time you log in, opt in with `brew services start gattini-watch`.
+`brew services stop gattini-watch` turns that off again.
+
+## Update and remove
+
+```sh
+brew upgrade gattini-watch
+brew services stop gattini-watch && brew uninstall gattini-watch
+```
+
+Gattini Watch only reads your Claude Code and Codex logs. It never writes to them. The
+one file it leaves behind is the service log, `$(brew --prefix)/var/log/gattini-watch.log`,
+which Homebrew keeps on uninstall. You can delete it by hand.
+
+## Options
 
 | Option | Default | Meaning |
 | --- | --- | --- |

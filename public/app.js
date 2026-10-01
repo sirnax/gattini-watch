@@ -9,6 +9,7 @@ const els = {
   live: $('live'),
   totals: $('totals'),
   pause: $('pause'),
+  stop: $('stop'),
   views: [...document.querySelectorAll('[data-view]')],
   detail: $('detail'),
   sort: $('sort'),
@@ -535,6 +536,24 @@ for (const button of els.views) {
   });
 }
 els.pause.addEventListener('click', () => setPaused(!state.paused));
+els.stop.addEventListener('click', async () => {
+  if (!confirm('Stop Gattini Watch? This page stops updating until you start it again.')) return;
+  try {
+    const response = await fetch('/api/stop', { method: 'POST', headers: { 'x-gattini-watch': 'stop' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (error) {
+    els.updated.textContent = `Could not stop: ${error.message}`;
+    return;
+  }
+  source?.close();
+  els.live.className = 'live off';
+  els.live.title = 'Stopped';
+  els.stop.disabled = true;
+  els.now.replaceChildren(
+    h('h2', { class: 'now-heading' }, 'Stopped'),
+    h('p', {}, 'Gattini Watch has stopped. Start it again with ', h('code', {}, 'brew services run gattini-watch'), ' or ', h('code', {}, 'gattini-watch --open'), '.'),
+  );
+});
 els.hours.addEventListener('change', () => {
   save();
   connect();

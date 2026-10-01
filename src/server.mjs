@@ -23,7 +23,7 @@ export function allowedHost(header) {
 
 // Serves the page, a JSON snapshot, and a server-sent event stream that pushes a new
 // snapshot whenever the logs change. Binds to loopback only: the logs contain prompts.
-export function startServer({ fleet, port, hours, hosts = ['127.0.0.1', '::1'] }) {
+export function startServer({ fleet, port, hours, hosts = ['127.0.0.1', '::1'], onStop = null }) {
   const server = createServer(async (request, response) => {
     if (!allowedHost(request.headers.host)) {
       response.writeHead(403, { 'content-type': 'text/plain' });
@@ -31,6 +31,22 @@ export function startServer({ fleet, port, hours, hosts = ['127.0.0.1', '::1'] }
       return;
     }
     const url = new URL(request.url, 'http://localhost');
+    // The page's Stop button. The custom header cannot be sent by another site without a
+    // CORS preflight, which this server never approves.
+    if (url.pathname === '/api/stop' && onStop) {
+      if (request.method !== 'POST') {
+        response.writeHead(405, { allow: 'POST', 'content-type': 'text/plain' });
+        response.end('Use POST');
+      } else if (request.headers['x-gattini-watch'] !== 'stop') {
+        response.writeHead(403, { 'content-type': 'text/plain' });
+        response.end('Forbidden');
+      } else {
+        response.writeHead(202, { 'content-type': 'text/plain' });
+        response.end('Stopping');
+        setImmediate(onStop);
+      }
+      return;
+    }
     try {
       if (url.pathname === '/api/snapshot') {
         const body = JSON.stringify(await fleet.snapshot({ hours: hoursFrom(url, hours) }));

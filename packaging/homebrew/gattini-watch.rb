@@ -23,17 +23,23 @@ class GattiniWatch < Formula
 
   def caveats
     <<~EOS
-      Open the dashboard at:
-        http://gattini-watch.localhost:4777
+      Start it in the background (until you stop it or log out):
+        brew services run gattini-watch
+      Then open http://gattini-watch.localhost:4777
 
-      The background service uses port 4777. If that port is taken, run it directly instead:
-        gattini-watch --port 4778 --open
+      Stop it with `brew services stop gattini-watch`, or the Stop button on the page.
+      Only if you want it to start every time you log in:
+        brew services start gattini-watch
+
+      Or run it in a terminal instead (Ctrl+C stops it):
+        gattini-watch --open
+      The service uses port 4777. If that port is taken, use: gattini-watch --port 4778 --open
     EOS
   end
 
   service do
     run [opt_bin/"gattini-watch"]
-    keep_alive true
+    keep_alive crashed: true
     log_path var/"log/gattini-watch.log"
     error_log_path var/"log/gattini-watch.log"
   end

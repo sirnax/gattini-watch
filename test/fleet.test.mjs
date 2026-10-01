@@ -224,3 +224,19 @@ test('answers loopback names only, and refuses a busy port instead of moving', a
     await server.close();
   }
 });
+
+test('the Stop button needs a POST with its own header', async () => {
+  let stopped = 0;
+  const server = await startServer({ fleet: { snapshot: async () => ({}) }, port: 0, hours: 1, onStop: () => (stopped += 1) });
+  try {
+    const url = `http://127.0.0.1:${server.port}/api/stop`;
+    assert.equal((await fetch(url)).status, 405);
+    assert.equal((await fetch(url, { method: 'POST' })).status, 403, 'a plain cross-site form post is refused');
+    assert.equal(stopped, 0);
+    assert.equal((await fetch(url, { method: 'POST', headers: { 'x-gattini-watch': 'stop' } })).status, 202);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(stopped, 1);
+  } finally {
+    await server.close();
+  }
+});

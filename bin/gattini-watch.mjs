@@ -62,7 +62,12 @@ if (values.json) {
 }
 
 try {
-  await startServer({ fleet, port, hours });
+  // A clean exit: the Homebrew service restarts only after a crash, so a stop stays stopped.
+  const onStop = () => {
+    console.log('Stopped from the page.');
+    process.exit(0);
+  };
+  await startServer({ fleet, port, hours, onStop });
 } catch (error) {
   // Never move to another port by itself: a changing address breaks bookmarks and services.
   console.error(
