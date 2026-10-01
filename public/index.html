@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Fleet</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5' cy='8' r='4' fill='%23b4532a'/%3E%3Ccircle cx='11' cy='8' r='4' fill='%230b6e55'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#fleet">Skip to projects</a>
+  <header class="bar">
+    <div class="brand">
+      <span class="live" id="live" role="img" aria-label="Connection status"></span>
+      <h1>Agent Fleet</h1>
+    </div>
+    <div class="totals" id="totals" aria-live="off"></div>
+    <button type="button" class="pause" id="pause" aria-pressed="false">⏸ Pause</button>
+  </header>
+
+  <section class="controls" aria-label="View options" autocomplete="off">
+    <div class="segmented" role="group" aria-label="Layout">
+      <button type="button" data-view="tree">Tree</button>
+      <button type="button" data-view="blocks">Blocks</button>
+    </div>
+    <label>Detail
+      <select id="detail">
+        <option value="glance">Glance</option>
+        <option value="standard" selected>Standard</option>
+        <option value="full">Full</option>
+      </select>
+    </label>
+    <label>Order
+      <select id="sort">
+        <option value="steady">Steady (start time)</option>
+        <option value="attention">Needs attention first (moves)</option>
+        <option value="activity">Latest activity (moves)</option>
+      </select>
+    </label>
+    <label>Project
+      <select id="project"><option value="">All projects</option></select>
+    </label>
+    <label>Window
+      <select id="hours">
+        <option value="1">1 hour</option>
+        <option value="3">3 hours</option>
+        <option value="6" selected>6 hours</option>
+        <option value="24">24 hours</option>
+        <option value="72">3 days</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="finished" checked> Show finished</label>
+    <label class="check"><input type="checkbox" id="guardian"> Show guardian reviews</label>
+    <span class="updated" id="updated"></span>
+  </section>
+
+  <section class="now" id="now" aria-label="Working now"></section>
+  <main id="fleet"></main>
+  <footer class="legend" id="legend" aria-label="Key"></footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

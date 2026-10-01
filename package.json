@@ -1,0 +1,22 @@
+{
+  "name": "agent-fleet",
+  "version": "0.1.0",
+  "description": "Live local dashboard of Claude Code and Codex agents, including cross-tool workers",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "agent-fleet": "bin/agent-fleet.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bin/agent-fleet.mjs --open",
+    "test": "node --test"
+  }
+}
