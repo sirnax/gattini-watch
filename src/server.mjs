@@ -13,11 +13,24 @@ function hoursFrom(url, fallback) {
   return Number.isFinite(value) && value > 0 && value <= 24 * 30 ? value : fallback;
 }
 
+// Only loopback names may reach the page. A foreign Host header means another site is
+// trying to read the logs through DNS rebinding, so it is refused.
+export function allowedHost(header) {
+  if (typeof header !== 'string') return false;
+  const name = header.toLowerCase().replace(/:\d+$/, '');
+  return name === 'localhost' || name.endsWith('.localhost') || name === '127.0.0.1' || name === '[::1]';
+}
+
 // Serves the page, a JSON snapshot, and a server-sent event stream that pushes a new
 // snapshot whenever the logs change. Binds to loopback only: the logs contain prompts.
-export function startServer({ fleet, port, host = '127.0.0.1', hours }) {
+export function startServer({ fleet, port, hours, hosts = ['127.0.0.1', '::1'] }) {
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url, `http://${request.headers.host ?? host}`);
+    if (!allowedHost(request.headers.host)) {
+      response.writeHead(403, { 'content-type': 'text/plain' });
+      response.end('Forbidden: open this page at http://gattini-watch.localhost or http://127.0.0.1');
+      return;
+    }
+    const url = new URL(request.url, 'http://localhost');
     try {
       if (url.pathname === '/api/snapshot') {
         const body = JSON.stringify(await fleet.snapshot({ hours: hoursFrom(url, hours) }));
@@ -68,8 +81,27 @@ export function startServer({ fleet, port, host = '127.0.0.1', hours }) {
     }
   });
 
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, host, () => resolve(server));
-  });
+  // One handler, listening on every loopback address the machine has. A machine without
+  // IPv6 skips ::1; any other failure, such as a busy port, stops start-up.
+  const listen = (host, onPort) =>
+    new Promise((resolve, reject) => {
+      const listener = host === hosts[0] ? server : createServer(server.listeners('request')[0]);
+      listener.once('error', reject);
+      listener.listen(onPort, host, () => resolve(listener));
+    });
+  return (async () => {
+    const listeners = [await listen(hosts[0], port)];
+    const bound = listeners[0].address().port;
+    for (const host of hosts.slice(1)) {
+      try {
+        listeners.push(await listen(host, bound));
+      } catch (error) {
+        if (error.code !== 'EADDRNOTAVAIL' && error.code !== 'EAFNOSUPPORT') {
+          for (const listener of listeners) listener.close();
+          throw error;
+        }
+      }
+    }
+    return { close: () => Promise.all(listeners.map((listener) => new Promise((done) => listener.close(done)))), port: bound };
+  })();
 }

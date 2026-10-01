@@ -6,13 +6,15 @@ import { join } from 'node:path';
 import { createFleet, projectName } from '../src/fleet.mjs';
 import { parseCodexCommand, parseClaudeCommand, shellCommandsOf } from '../src/commands.mjs';
 import { JsonlTail } from '../src/jsonl.mjs';
+import { allowedHost, startServer } from '../src/server.mjs';
+import { request } from 'node:http';
 
 const T0 = Date.parse('2026-10-01T10:00:00Z');
 const iso = (offsetSeconds) => new Date(T0 + offsetSeconds * 1000).toISOString();
 const jsonl = (records) => records.map((record) => JSON.stringify(record)).join('\n') + '\n';
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'agent-fleet-'));
+  const root = await mkdtemp(join(tmpdir(), 'gattini-watch-'));
   const claudeRoot = join(root, 'claude');
   const codexRoot = join(root, 'codex');
   const repo = '/work/teacake';
@@ -186,7 +188,7 @@ test('builds the cross-tool tree with statuses', async () => {
 });
 
 test('reads appended lines incrementally, including a line split across writes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agent-fleet-tail-'));
+  const root = await mkdtemp(join(tmpdir(), 'gattini-watch-tail-'));
   const path = join(root, 'log.jsonl');
   try {
     const tail = new JsonlTail({ init: () => ({ seen: [] }), reduce: (state, record) => state.seen.push(record.n) });
@@ -202,4 +204,23 @@ test('reads appended lines incrementally, including a line split across writes',
 test('groups worktrees under their repository', () => {
   assert.equal(projectName('/work/teacake/.claude/worktrees/feature-x'), 'teacake');
   assert.equal(projectName('/Users/me/.codex/worktrees/abc/teacake'), 'teacake');
+});
+
+test('answers loopback names only, and refuses a busy port instead of moving', async () => {
+  for (const host of ['gattini-watch.localhost:4777', 'localhost', '127.0.0.1:9', '[::1]:4777', 'GATTINI-WATCH.LOCALHOST']) assert.ok(allowedHost(host), host);
+  for (const host of ['evil.example', 'evil.example:4777', 'localhost.evil.example', '192.168.1.5:4777', undefined]) assert.ok(!allowedHost(host), String(host));
+
+  const fleet = { snapshot: async () => ({ ok: true }) };
+  const server = await startServer({ fleet, port: 0, hours: 1 });
+  try {
+    const url = `http://127.0.0.1:${server.port}/api/snapshot`;
+    assert.equal((await fetch(url)).status, 200);
+    const foreign = await new Promise((resolve, reject) => {
+      request(url, { headers: { host: 'evil.example' } }, (response) => resolve(response.statusCode)).on('error', reject).end();
+    });
+    assert.equal(foreign, 403);
+    await assert.rejects(startServer({ fleet, port: server.port, hours: 1 }), { code: 'EADDRINUSE' });
+  } finally {
+    await server.close();
+  }
 });

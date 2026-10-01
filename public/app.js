@@ -47,7 +47,8 @@ const ROLES = { review: 'Review', build: 'Build', guard: 'Guardian', explore: 'E
 const KINDS = { session: 'session', subagent: 'subagent', worker: 'worker' };
 const CHANGE_MARK_MS = 60_000;
 const TICK_MS = 15_000;
-const STORE_KEY = 'agent-fleet:prefs';
+const STORE_KEY = 'gattini-watch:prefs';
+const OLD_STORE_KEY = 'agent-fleet:prefs';
 
 const prefs = load();
 const state = {
@@ -66,7 +67,7 @@ let source = null;
 
 function load() {
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) ?? {};
+    return JSON.parse(localStorage.getItem(STORE_KEY) ?? localStorage.getItem(OLD_STORE_KEY)) ?? {};
   } catch {
     return {};
   }

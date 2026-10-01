@@ -1,44 +1,45 @@
-/* Calm by design: no animation, steady layout, colour never the only signal. */
+/* Gattini brand board (gattini-site brand.css), with readable roles per theme.
+   Calm by design: no animation, steady layout, colour never the only signal. */
 :root {
-  --bg: #f6f6f3;
-  --panel: #ffffff;
-  --ink: #1b1b19;
-  --muted: #5c5c56;
-  --line: #deddd6;
-  --focus: #1d5fae;
+  --bg: #eeede8;
+  --panel: #faf8f5;
+  --ink: #0f172a;
+  --muted: #475569;
+  --line: #cdd2dc;
+  --focus: #4f46e5;
   --claude: #a84b24;
   --codex: #0b6650;
-  --s-running: #1d5fae;
+  --s-running: #4f46e5;
   --s-failed: #b42318;
-  --s-stale: #865600;
+  --s-stale: #92400e;
   --s-unlogged: #6b41a6;
-  --s-idle: #55554f;
-  --s-done: #23703f;
-  --warn-bg: #fff4dc;
-  --warn-ink: #6b4700;
+  --s-idle: #475569;
+  --s-done: #047857;
+  --warn-bg: #fff4df;
+  --warn-ink: #92400e;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  --sans: 'Avenir Next', Avenir, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141413;
-    --panel: #1d1d1b;
-    --ink: #eceae4;
-    --muted: #a9a8a1;
-    --line: #34342f;
-    --focus: #8ab8ff;
+    --bg: #0f172a;
+    --panel: #172033;
+    --ink: #edf0f7;
+    --muted: #b6c2d4;
+    --line: #334155;
+    --focus: #a5b4fc;
     --claude: #ec9a74;
     --codex: #5fd0a9;
-    --s-running: #8ab8ff;
+    --s-running: #a5b4fc;
     --s-failed: #ff8a80;
-    --s-stale: #e9bb52;
+    --s-stale: #fbbf24;
     --s-unlogged: #c8a6f7;
-    --s-idle: #b9b8b0;
-    --s-done: #74d394;
-    --warn-bg: #3a2f14;
-    --warn-ink: #f3d47f;
+    --s-idle: #b6c2d4;
+    --s-done: #6ee7b7;
+    --warn-bg: #352c26;
+    --warn-ink: #fbbf24;
     color-scheme: dark;
   }
 }
@@ -63,6 +64,7 @@ button, select, input { font: inherit; color: inherit; }
   padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.mark { width: 22px; height: 22px; color: var(--ink); flex: none; }
 h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
 .live { width: 10px; height: 10px; border-radius: 50%; background: var(--s-idle); }
 .live.on { background: var(--s-done); }
