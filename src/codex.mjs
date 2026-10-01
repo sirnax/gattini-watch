@@ -17,7 +17,12 @@ function init() {
     threadSource: null,
     parentThreadId: null,
     nickname: null,
+    agentPath: null,
+    depth: null,
     role: null,
+    // A spawned subagent's log opens with a copy of its parent's conversation; nothing
+    // counts until its own thread starts (the first thread_settings_applied event).
+    inherited: false,
     title: null,
     model: null,
     effort: null,
@@ -48,24 +53,39 @@ function requestText(text) {
 }
 
 function reduce(state, record) {
+  const payload = record.payload ?? {};
+
+  // Only the first header describes this log. Later ones are copies of a parent's or an
+  // earlier thread's header and must not change its identity.
+  if (record.type === 'session_meta') {
+    if (state.id) return;
+    const spawn = payload.source?.subagent?.thread_spawn;
+    state.id = payload.id ?? null;
+    state.cwd = payload.cwd ?? null;
+    state.originator = payload.originator ?? null;
+    state.source = typeof payload.source === 'string' ? payload.source : payload.source?.subagent ? 'subagent' : null;
+    state.threadSource = payload.thread_source ?? null;
+    state.parentThreadId = spawn?.parent_thread_id ?? payload.parent_thread_id ?? null;
+    state.nickname = spawn?.agent_nickname ?? payload.agent_nickname ?? null;
+    state.agentPath = spawn?.agent_path ?? null;
+    state.depth = spawn?.depth ?? null;
+    state.role = spawn?.agent_role ?? payload.agent_role ?? null;
+    state.inherited = Boolean(spawn);
+    if (payload.timestamp) state.startedAt = state.lastAt = Date.parse(payload.timestamp);
+    return;
+  }
+  if (state.inherited) {
+    if (record.type === 'event_msg' && payload.type === 'thread_settings_applied') state.inherited = false;
+    else return;
+  }
+
   const at = record.timestamp ? Date.parse(record.timestamp) : null;
   if (at) {
     state.startedAt ??= at;
     state.lastAt = at;
   }
-  const payload = record.payload ?? {};
 
-  if (record.type === 'session_meta') {
-    state.id = payload.id ?? state.id;
-    state.cwd = payload.cwd ?? state.cwd;
-    state.originator = payload.originator ?? null;
-    state.source = typeof payload.source === 'string' ? payload.source : payload.source?.subagent ? 'subagent' : null;
-    state.threadSource = payload.thread_source ?? null;
-    state.parentThreadId = payload.parent_thread_id ?? null;
-    state.nickname = payload.agent_nickname ?? null;
-    state.role = payload.agent_role ?? null;
-    if (payload.timestamp) state.startedAt = Date.parse(payload.timestamp);
-  } else if (record.type === 'turn_context') {
+  if (record.type === 'turn_context') {
     state.model = payload.model ?? state.model;
     state.effort = payload.effort ?? payload.collaboration_mode?.settings?.reasoning_effort ?? state.effort;
     state.sandbox = payload.sandbox_policy?.type ?? state.sandbox;
@@ -77,7 +97,12 @@ function reduce(state, record) {
     else if (payload.type === 'error') state.error = String(payload.message ?? 'error').slice(0, 200);
     else if (payload.type === 'token_count') state.tokens = payload.info?.total_token_usage?.total_tokens ?? state.tokens;
   } else if (record.type === 'response_item') {
-    if (payload.type === 'message' && payload.role === 'user' && !state.title) {
+    if (payload.type === 'agent_message' && !state.title && payload.recipient === state.agentPath) {
+      // A subagent's own task. Its payload is often encrypted; use it when it is plain text.
+      const text = (payload.content ?? []).map((part) => part?.text ?? '').join('');
+      const task = text.match(/^Message Type: NEW_TASK[\s\S]*?\nPayload:\n([\s\S]+)/)?.[1]?.trim();
+      if (task) state.title = task.slice(0, 200);
+    } else if (payload.type === 'message' && payload.role === 'user' && !state.title) {
       const title = (payload.content ?? []).map((part) => requestText(part?.text)).find(Boolean);
       if (title) state.title = title;
     } else if (payload.type === 'custom_tool_call' || payload.type === 'function_call' || payload.type === 'local_shell_call') {
@@ -90,26 +115,6 @@ function reduce(state, record) {
       }
     }
   }
-}
-
-function mergeParts(a, b) {
-  const [early, late] = (a.startedAt ?? 0) <= (b.startedAt ?? 0) ? [a, b] : [b, a];
-  return {
-    ...early,
-    model: late.model ?? early.model,
-    effort: late.effort ?? early.effort,
-    sandbox: late.sandbox ?? early.sandbox,
-    title: early.title ?? late.title,
-    lastAt: Math.max(early.lastAt ?? 0, late.lastAt ?? 0),
-    mtimeMs: Math.max(early.mtimeMs, late.mtimeMs),
-    turnsStarted: early.turnsStarted + late.turnsStarted,
-    turnsCompleted: early.turnsCompleted + late.turnsCompleted,
-    turnsAborted: early.turnsAborted + late.turnsAborted,
-    error: late.error ?? early.error,
-    tokens: Math.max(early.tokens, late.tokens),
-    lastAction: late.lastAction ?? early.lastAction,
-    claudeCalls: [...early.claudeCalls, ...late.claudeCalls],
-  };
 }
 
 async function listDir(path) {
@@ -149,16 +154,12 @@ export function createCodexReader(root) {
   async function read(sinceMs) {
     const files = await listFiles(sinceMs);
     tail.retain(files);
-    // One session can span several rollout files (e.g. after a resume); merge them by id.
-    const sessions = new Map();
+    const sessions = [];
     for (const path of files) {
       const { state, mtimeMs } = await tail.read(path).catch(() => ({}));
-      if (!state?.id) continue;
-      const part = { mtimeMs, ...state };
-      const seen = sessions.get(state.id);
-      sessions.set(state.id, seen ? mergeParts(seen, part) : part);
+      if (state?.id) sessions.push({ path, mtimeMs, ...state });
     }
-    return { sessions: [...sessions.values()] };
+    return { sessions, files: files.length };
   }
 
   return { read };

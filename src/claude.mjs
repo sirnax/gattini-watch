@@ -141,13 +141,13 @@ export function createClaudeReader(root) {
       const { state, mtimeMs } = await tail.read(file.path).catch(() => ({}));
       if (!state) continue;
       if (file.kind === 'session') {
-        sessions.push({ id: file.sessionId, mtimeMs, ...state });
+        sessions.push({ id: file.sessionId, path: file.path, mtimeMs, ...state });
       } else {
         let meta = {};
         try {
           meta = JSON.parse(await readFile(file.metaPath, 'utf8'));
         } catch {}
-        subagents.push({ id: file.agentId, sessionId: file.sessionId, mtimeMs, meta, ...state });
+        subagents.push({ id: file.agentId, sessionId: file.sessionId, path: file.path, mtimeMs, meta, ...state });
       }
     }
     return { sessions, subagents };

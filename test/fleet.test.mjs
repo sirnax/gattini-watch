@@ -62,17 +62,49 @@ async function fixture() {
     { timestamp: iso(90), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { total_tokens: 5000 } } } },
     { timestamp: iso(91), type: 'event_msg', payload: { type: 'task_complete' } },
   ]));
-  // Interactive Codex session in block-beaver that launches claude -p, split over two files.
-  await writeFile(join(day, 'rollout-b1.jsonl'), jsonl([
-    { timestamp: iso(60), type: 'session_meta', payload: { id: 'cx-main', timestamp: iso(60), cwd: beaver, originator: 'codex_vscode', source: 'vscode', thread_source: 'user' } },
+  // Interactive Codex session in block-beaver that launches claude -p. Like real logs, it
+  // gains a later copy of a header from another thread, which must not change its identity.
+  const mainMeta = { id: 'cx-main', timestamp: iso(60), cwd: beaver, originator: 'codex_vscode', source: 'vscode', thread_source: 'user' };
+  const mainHistory = [
     { timestamp: iso(60), type: 'turn_context', payload: { model: 'gpt-6.1-sol', effort: 'medium', sandbox_policy: { type: 'workspace-write' } } },
     { timestamp: iso(60), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# Context from my IDE setup:\n\n## My request for Codex:\nShip sub-project A' }] } },
     { timestamp: iso(61), type: 'event_msg', payload: { type: 'task_started' } },
     { timestamp: iso(100), type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'text(await tools.exec_command({cmd:"cd /tmp/w && claude -p --model claude-sonnet-5-5 --effort high < task.txt"}));' } },
-  ]));
-  await writeFile(join(day, 'rollout-b2.jsonl'), jsonl([
-    { timestamp: iso(200), type: 'session_meta', payload: { id: 'cx-main', timestamp: iso(200), cwd: beaver, originator: 'codex_vscode', source: 'vscode', thread_source: 'user' } },
+  ];
+  const spawnMeta = (id, parent, nickname, path, depth, at) => ({
+    timestamp: iso(at), type: 'session_meta',
+    payload: { id, timestamp: iso(at), cwd: beaver, originator: 'codex_vscode', source: { subagent: { thread_spawn: { parent_thread_id: parent, depth, agent_path: path, agent_nickname: nickname, agent_role: null } } }, thread_source: 'subagent' },
+  });
+  const ownThread = (at, task) => [
+    { timestamp: iso(at), type: 'event_msg', payload: { type: 'thread_settings_applied' } },
+    { timestamp: iso(at), type: 'event_msg', payload: { type: 'task_started' } },
+    { timestamp: iso(at), type: 'response_item', payload: { type: 'agent_message', author: '/root', recipient: task.path, content: [{ type: 'input_text', text: `Message Type: NEW_TASK\nTask name: ${task.path}\nSender: /root\nPayload:\n${task.text ?? ''}` }] } },
+    { timestamp: iso(at + 1), type: 'turn_context', payload: { model: 'gpt-6.1-sol', effort: 'high', sandbox_policy: { type: 'workspace-write' } } },
+    { timestamp: iso(at + 5), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { total_tokens: 700 } } } },
+    { timestamp: iso(at + 6), type: 'event_msg', payload: { type: 'task_complete' } },
+  ];
+  await writeFile(join(day, 'rollout-b1.jsonl'), jsonl([
+    { timestamp: iso(60), type: 'session_meta', payload: mainMeta },
+    ...mainHistory,
+    { timestamp: iso(150), type: 'session_meta', payload: { ...mainMeta, id: 'cx-other', timestamp: iso(150) } },
+    { timestamp: iso(151), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { total_tokens: 9000 } } } },
     { timestamp: iso(201), type: 'event_msg', payload: { type: 'task_complete' } },
+  ]));
+  // Spawned subagent: its own header, then its parent's, then a copy of the parent's
+  // conversation (with an unmatched task_started) before its own thread begins.
+  await writeFile(join(day, 'rollout-s1.jsonl'), jsonl([
+    spawnMeta('cx-volta', 'cx-main', 'Volta', '/root/scanner', 1, 110),
+    { timestamp: iso(110), type: 'session_meta', payload: mainMeta },
+    ...mainHistory,
+    ...ownThread(111, { path: '/root/scanner' }),
+  ]));
+  // Nested spawn two levels down, carrying both ancestors' headers; its task is readable.
+  await writeFile(join(day, 'rollout-s2.jsonl'), jsonl([
+    spawnMeta('cx-kepler', 'cx-volta', 'Kepler', '/root/scanner/check', 2, 120),
+    spawnMeta('cx-volta', 'cx-main', 'Volta', '/root/scanner', 1, 110),
+    { timestamp: iso(110), type: 'session_meta', payload: mainMeta },
+    ...mainHistory,
+    ...ownThread(121, { path: '/root/scanner/check', text: 'Check the scanner output' }),
   ]));
   // Guardian review subagent of the Codex session.
   await writeFile(join(day, 'rollout-c.jsonl'), jsonl([
@@ -121,16 +153,33 @@ test('builds the cross-tool tree with statuses', async () => {
     assert.equal(worker.title, 'review the diff');
     assert.equal(worker.tokens, 5000);
 
-    assert.equal(beaver.nodes.length, 1, 'split rollout files merge; claude worker and guardian nest');
+    assert.equal(beaver.nodes.length, 1, 'later headers do not split or rename the session');
     const main = beaver.nodes[0];
+    assert.equal(main.key, 'codex:cx-main');
     assert.equal(main.title, 'Ship sub-project A');
     assert.equal(main.status, 'idle');
-    const children = main.children.map((child) => `${child.tool}/${child.kind}`).sort();
-    assert.deepEqual(children, ['claude/worker', 'codex/subagent']);
-    assert.ok(main.children.find((child) => child.tool === 'codex').guardian);
+    assert.equal(main.tokens, 9000);
+    const children = main.children.map((child) => `${child.tool}/${child.kind}/${child.title}`).sort();
+    assert.deepEqual(children, ['claude/worker/Review sub-project A', 'codex/subagent/Guardian review', 'codex/subagent/Volta · scanner']);
+
+    // Spawned subagents keep their own identity and ignore the inherited conversation.
+    const volta = main.children.find((child) => child.key === 'codex:cx-volta');
+    assert.equal(volta.status, 'done', 'the inherited task_started does not leave it running');
+    assert.equal(volta.tokens, 700);
+    assert.equal(volta.effort, 'high');
+    assert.equal(volta.children.length, 1);
+    const kepler = volta.children[0];
+    assert.equal(kepler.key, 'codex:cx-kepler');
+    assert.equal(kepler.title, 'Check the scanner output');
+    assert.equal(kepler.status, 'done');
+    assert.ok(kepler.tags.includes('scanner/check'));
+    assert.equal(main.children.filter((child) => child.tool === 'claude').length, 1, 'inherited launches are not counted again');
+
     // The Claude session's last turn ended on a tool call, so it is still running.
     assert.equal(session.status, 'running');
-    assert.deepEqual(snapshot.counts, { claude: { running: 1, total: 3 }, codex: { running: 0, total: 4 } });
+    assert.deepEqual(snapshot.counts, { claude: { running: 1, total: 3 }, codex: { running: 0, total: 6 } }, 'five logs plus one unlogged launch');
+    assert.deepEqual(snapshot.audit.codex, { read: 5, shown: 5, missing: [] });
+    assert.deepEqual(snapshot.audit.claude, { read: 3, shown: 3, missing: [] });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

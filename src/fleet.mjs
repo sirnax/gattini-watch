@@ -12,6 +12,8 @@ const ACTIVE_MS = 10 * 60 * 1000;
 const LINK_BEFORE_MS = 15 * 1000;
 const LINK_AFTER_MS = 3 * 60 * 1000;
 
+const ORIGINATORS = { codex_vscode: 'vscode', codex_exec: 'exec', 'codex-tui': 'cli', 'Codex Desktop': 'desktop' };
+
 const ENTRYPOINTS = { 'claude-vscode': 'vscode', cli: 'cli', 'sdk-cli': 'headless', 'claude-desktop': 'desktop', 'sdk-py': 'sdk' };
 
 const TEMP_ROOTS = ['/tmp/', '/private/tmp/', '/var/folders/', '/private/var/folders/'];
@@ -105,22 +107,29 @@ function subagentNode(agent, now) {
   };
 }
 
+// "Volta · scanner" from the spawn record when the task itself is not readable.
+function spawnName(session) {
+  const path = session.agentPath?.split('/').filter(Boolean).slice(1).join('/');
+  return [session.nickname, path].filter(Boolean).join(' · ') || null;
+}
+
 function codexNode(session, now, codexRoot) {
   const guardian = session.threadSource === 'guardian_review';
   const kind = session.source === 'subagent' ? 'subagent' : session.originator === 'codex_exec' ? 'worker' : 'session';
   const tags = [];
-  if (session.originator === 'codex_vscode') tags.push('vscode');
-  if (session.originator === 'codex_exec') tags.push('exec');
+  if (kind !== 'subagent' && session.originator) tags.push(ORIGINATORS[session.originator] ?? session.originator);
   if (guardian) tags.push('guardian');
+  if (session.agentPath) tags.push(session.agentPath.replace(/^\/root\/?/, '') || 'root');
   if (session.role) tags.push(session.role);
   if (session.sandbox) tags.push(session.sandbox);
   if (session.cwd?.startsWith(join(codexRoot, 'worktrees'))) tags.push('worktree');
   return {
     key: `codex:${session.id}`,
+    path: session.path,
     tool: 'codex',
     kind,
     guardian,
-    title: (guardian ? 'Guardian review' : null) || session.title || session.nickname || session.id.slice(0, 8),
+    title: (guardian ? 'Guardian review' : null) || session.title || spawnName(session) || session.id.slice(0, 8),
     cwd: session.cwd,
     model: session.model,
     effort: session.effort,
@@ -192,21 +201,40 @@ function walk(nodes, visit) {
   }
 }
 
+// Every log read should appear exactly once in the tree; anything else is reported.
+function auditOf(byTool, shown, fileCounts) {
+  const audit = {};
+  for (const [tool, entries] of Object.entries(byTool)) {
+    const missing = entries.filter(({ node }) => !shown.has(node.key)).map(({ session, node }) => ({ key: node.key, path: session.path ?? null }));
+    audit[tool] = { read: fileCounts[tool] ?? entries.length, shown: entries.length - missing.length, missing };
+  }
+  return audit;
+}
+
 export function createFleet({ claudeRoot, codexRoot }) {
   const claude = createClaudeReader(claudeRoot);
   const codex = createCodexReader(codexRoot);
 
   async function snapshot({ hours = 6, now = Date.now() } = {}) {
     const sinceMs = now - hours * 60 * 60 * 1000;
-    const [{ sessions: claudeSessions, subagents }, { sessions: codexSessions }] = await Promise.all([claude.read(sinceMs), codex.read(sinceMs)]);
+    const [{ sessions: claudeSessions, subagents }, { sessions: codexSessions, files: codexFiles }] = await Promise.all([claude.read(sinceMs), codex.read(sinceMs)]);
 
     const claudeNodes = new Map(claudeSessions.map((session) => [session.id, { session, node: claudeNode(session, now) }]));
-    const codexNodes = new Map(codexSessions.map((session) => [session.id, { session, node: codexNode(session, now, codexRoot) }]));
+    const codexNodes = new Map();
+    for (const session of codexSessions) {
+      const node = codexNode(session, now, codexRoot);
+      // Two logs claiming one id would hide one of them; keep both and let the audit show it.
+      const id = codexNodes.has(session.id) ? `${session.id}#${session.path}` : session.id;
+      if (id !== session.id) node.key = `codex:${id}`;
+      codexNodes.set(id, { session, node });
+    }
     const attached = new Set();
     const claimed = new Set();
 
+    const claudeEntries = [...claudeNodes.values()];
     for (const agent of subagents) {
       const node = subagentNode(agent, now);
+      claudeEntries.push({ session: agent, node });
       const parent = claudeNodes.get(agent.sessionId);
       if (parent) parent.node.children.push(node);
       else claudeNodes.set(`orphan:${agent.id}`, { session: agent, node });
@@ -250,15 +278,19 @@ export function createFleet({ claudeRoot, codexRoot }) {
     }
 
     const counts = { claude: { running: 0, total: 0 }, codex: { running: 0, total: 0 } };
+    const shown = new Set();
     walk(roots, (node) => {
+      if (shown.has(node.key)) return;
+      shown.add(node.key);
       counts[node.tool].total += 1;
       if (node.status === 'running') counts[node.tool].running += 1;
     });
+    const audit = auditOf({ claude: claudeEntries, codex: [...codexNodes.values()] }, shown, { codex: codexFiles });
 
     const projectList = [...projects.values()].map((project) => ({ ...project, nodes: sortTree(project.nodes, true) }));
     const lastActivity = (project) => Math.max(...project.nodes.map((node) => node.lastAt ?? 0));
     projectList.sort((a, b) => lastActivity(b) - lastActivity(a));
-    return { generatedAt: now, hours, counts, projects: projectList };
+    return { generatedAt: now, hours, counts, audit, projects: projectList };
   }
 
   return { snapshot };

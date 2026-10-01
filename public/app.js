@@ -20,6 +20,7 @@ const els = {
   now: $('now'),
   fleet: $('fleet'),
   legend: $('legend'),
+  audit: $('audit'),
 };
 
 const TOOLS = {
@@ -391,6 +392,20 @@ function renderLegend() {
   );
 }
 
+// Proof that nothing read from disk was left out of the view.
+function renderAudit() {
+  const audit = state.snapshot.audit;
+  if (!audit) return;
+  const parts = Object.entries(audit).map(([tool, { read, shown }]) => `${TOOLS[tool]?.label ?? tool}: ${read} logs read · ${shown} shown`);
+  const missing = Object.values(audit).flatMap((entry) => entry.missing);
+  const gap = Object.values(audit).some((entry) => entry.read !== entry.shown);
+  els.audit.classList.toggle('audit-gap', gap);
+  els.audit.replaceChildren(
+    h('span', {}, `${gap ? '⚠ ' : ''}${parts.join('   ')}`),
+    ...(missing.length ? [h('ul', {}, missing.map((entry) => h('li', {}, entry.path ?? entry.key)))] : []),
+  );
+}
+
 // Only the parts that change what a viewer sees count; timestamps and token counts do not.
 function signatureOf(list) {
   const marks = [...state.changedAt.entries()].filter(([, at]) => Date.now() - at <= CHANGE_MARK_MS).map(([key]) => key).sort();
@@ -427,6 +442,7 @@ function accept(snapshot) {
   state.snapshot = snapshot;
   renderProjectOptions();
   els.updated.textContent = `Updated ${clock(snapshot.generatedAt)}`;
+  renderAudit();
   render();
 }
 
